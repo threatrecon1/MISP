@@ -474,6 +474,7 @@ class Feed extends AppModel
      * @param array $event
      * @param string $scope `Feed`, `Server` or `Both`
      * @return array
+     * @throws RedisException
      */
     public function attachFeedCorrelations(array $attributes, array $user, array &$event, $scope = 'Feed')
     {
@@ -488,7 +489,7 @@ class Feed extends AppModel
         }
 
         try {
-            $redis = $this->setupRedisWithException();
+            $redis = RedisTool::init();
         } catch (Exception $e) {
             return $attributes;
         }
@@ -1355,7 +1356,7 @@ class Feed extends AppModel
             'recursive' => -1,
             'fields' => array('source_format', 'input_source', 'url', 'id', 'settings', 'headers')
         );
-        $redis = $this->setupRedisWithException();
+        $redis = RedisTool::init();
         if ($scope !== 'all') {
             if (is_numeric($scope)) {
                 $params['conditions']['id'] = $scope;
@@ -1387,11 +1388,12 @@ class Feed extends AppModel
     /**
      * @param array $feeds
      * @return array
+     * @throws RedisException
      */
     public function attachFeedCacheTimestamps(array $feeds)
     {
         try {
-            $redis = $this->setupRedisWithException();
+            $redis = RedisTool::init();
         } catch (Exception $e) {
             return $feeds;
         }
@@ -1412,6 +1414,7 @@ class Feed extends AppModel
      * @param Redis $redis
      * @param int|false $jobId
      * @return bool
+     * @throws RedisException
      */
     private function __cacheFeed($feed, $redis, $jobId = false)
     {
@@ -1486,7 +1489,6 @@ class Feed extends AppModel
             return false;
         }
 
-        $this->Attribute = ClassRegistry::init('Attribute');
         $k = 0;
         $this->Attribute = ClassRegistry::init('Attribute');
         foreach ($manifest as $uuid => $event) {
@@ -1786,7 +1788,7 @@ class Feed extends AppModel
 
     public function getCachedElements($feedId)
     {
-        $redis = $this->setupRedis();
+        $redis = RedisTool::init();
         $cardinality = $redis->sCard('misp:cache:F' . $feedId);
         return $cardinality;
     }
@@ -1794,7 +1796,7 @@ class Feed extends AppModel
     public function getAllCachingEnabledFeeds($feedId, $intersectingOnly = false)
     {
         if ($intersectingOnly) {
-            $redis = $this->setupRedis();
+            $redis = RedisTool::init();
         }
         $result['Feed'] = $this->find('all', array(
             'conditions' => array(
@@ -1862,7 +1864,7 @@ class Feed extends AppModel
             $value = [$value];
         }
 
-        $redis = $this->setupRedisWithException();
+        $redis = RedisTool::init();
 
         $hits = [];
         foreach ($value as $v) {
@@ -2164,16 +2166,12 @@ class Feed extends AppModel
     /**
      * Remove all cached serves and feeds from Redis.
      * @throws Exception
+     * @return int Number of deleted cached entries
      */
     public function clearCache()
     {
-        $redis = $this->setupRedisWithException();
-        $keys = $redis->keys(self::REDIS_CACHE_PREFIX . '*');
-        $redis->pipeline();
-        foreach ($keys as $key) {
-            $redis->del($key);
-        }
-        $redis->exec();
+        $redis = RedisTool::init();
+        return RedisTool::deleteKeysByPattern($redis, self::REDIS_CACHE_PREFIX . '*');
     }
 
     /**
@@ -2193,7 +2191,7 @@ class Feed extends AppModel
         }
         $source = ($type === 'server' ? 'S' : 'F') . $sourceId;
 
-        $redis = $this->setupRedisWithException();
+        $redis = RedisTool::init();
 
         // Delete existing values from current feed
         $existingMembers = $redis->sMembers(self::REDIS_CACHE_PREFIX . $source);
@@ -2242,7 +2240,7 @@ class Feed extends AppModel
      */
     private function convertToNewRedisCacheFormat()
     {
-        $redis = $this->setupRedisWithException();
+        $redis = RedisTool::init();
 
         $this->Server = ClassRegistry::init('Server');
         $serverIds = $this->Server->find('column', ['fields' => ['id']]);
@@ -2302,7 +2300,7 @@ class Feed extends AppModel
 
         // Delete old keys
         $redis->del('misp:feed_cache:combined', 'misp:server_cache:combined');
-        $redis->del($redis->keys('misp:feed_cache_timestamp:*'));
-        $redis->del($redis->keys('misp:server_cache_timestamp:*'));
+        RedisTool::deleteKeysByPattern($redis, 'misp:feed_cache_timestamp:*');
+        RedisTool::deleteKeysByPattern($redis, 'misp:server_cache_timestamp:*');
     }
 }
